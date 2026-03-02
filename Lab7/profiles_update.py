@@ -190,7 +190,7 @@ def plot_profile(
         plt.close()
 
 
-def format_deg_for_filename(deg: float) -> str:
+def format_deg_for_filename(deg: float):
     """
     Make a compact degree string for filenames (e.g., 0, 45, 12.5)
     """
@@ -199,7 +199,7 @@ def format_deg_for_filename(deg: float) -> str:
     return f"{deg:g}"
 
 
-def main() -> None:
+def main():
     json_path = Path(JSON_PATH).expanduser().resolve()
     if not json_path.exists():
         raise FileNotFoundError(f"Input not found: {json_path}")
