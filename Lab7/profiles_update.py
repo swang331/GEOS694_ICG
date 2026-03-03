@@ -25,15 +25,15 @@ import matplotlib.pyplot as plt
 JSON_PATH = r"/Users/serinawang/Desktop/g2s_2023-10-18.json"    # Specify G2S file path here
 
 # Direction of propagation for effective sound speed, measured clockwise from East:
-#   0° = East, 90° = North, 180° = West, 270° = South
-PROPAGATION_AZIMUTH_DEG = 0.0
+# One or more azimuths (deg) profiles, clockwise from East: 0=E, 90=N, 180=W, 270=S
+PROPAGATION_AZIMUTHS_DEG = [0.0, 90.0, 180.0, 270.0]
 
 # Googled parameters
 GAMMA_AIR = 1.4          # heat capacity ratio
 R_DRY_AIR = 287.0        # J/(kg*K)
 
 # Plot control
-PLOT_MAX_HEIGHT_M = 10000
+PLOT_MAX_HEIGHT_M = 100000
 SHOW_PLOTS = True
 
 
@@ -69,7 +69,7 @@ def build_profile_dataframe(g2s_obj: dict):
 
     Required parameters in the JSON file:
       - Z0: station elevation / reference height (km) (used to convert AGL->MSL)
-      - Z : height above ground level (km)
+      - Z: height above ground level (km)
       - T: temperature (K)
       - U: zonal wind (m/s), positive east
       - V: meridional wind (m/s), positive north
@@ -117,37 +117,45 @@ def build_profile_dataframe(g2s_obj: dict):
     return df
 
 
-def add_sound_speeds(df: pd.DataFrame, azimuth_deg: float):
+def add_sound_speeds(df: pd.DataFrame, azimuths_deg):
     """
     Add:
       - c0_ms: adiabatic sound speed from temperature (m/s)
-      - cEff_ms: effective sound speed along azimuth_deg (m/s)
+      - cEff_ms_alpha<deg>: effective sound speed for each azimuth in azimuths_deg
 
-    Effective sound speed is:
-        c_eff = c0 + wind_component_along_path
+    Effective sound speed:
+        c_eff = c0 + wind_along_path
 
     With azimuth measured clockwise from East:
       wind_along = U * sin(alpha) + V * cos(alpha)
-    where U is eastward, V is northward
+    where U is eastward (+E), V is northward (+N)
     """
-    alpha = radians(azimuth_deg)
-
-    # Adiabatic sound speed in dry air calculation:
-    # c0 = sqrt(gamma * R * T)
+    # Compute c0 once
     df["c0_ms"] = np.sqrt(GAMMA_AIR * R_DRY_AIR * df["T_K"].to_numpy())
 
-    # Project horizontal wind onto propagation direction (unit vector defined by alpha)
-    wind_along_path = df["U_ms"] * sin(alpha) + df["V_ms"] * cos(alpha)
+    # Normalize input to a list (accept float, list, tuple, np array)
+    if np.isscalar(azimuths_deg):
+        azimuths = [float(azimuths_deg)]
+    else:
+        azimuths = [float(a) for a in azimuths_deg]
 
-    df["cEff_ms"] = df["c0_ms"] + wind_along_path
+    for az in azimuths:
+        alpha = radians(az)
+        wind_along_path = df["U_ms"] * sin(alpha) + df["V_ms"] * cos(alpha)
+
+        az_str = format_deg_for_filename(az)
+        col = f"cEff_ms_alpha{az_str}deg"
+        df[col] = df["c0_ms"] + wind_along_path
+
     return df
 
 
 def write_profiles_csv(df: pd.DataFrame, out_csv: Path):
     """
-    Save a consistent set of columns to CSV (no index column).
+    Save a consistent set of columns to CSV (no index column)
+    Includes any cEff_ms_alpha<deg>deg columns if present
     """
-    columns = [
+    base_columns = [
         "z_agl_km",
         "z_msl_km",
         "z_agl_m",
@@ -160,9 +168,17 @@ def write_profiles_csv(df: pd.DataFrame, out_csv: Path):
         "P_mbar",
         "P_Pa",
         "c0_ms",
-        "cEff_ms",
     ]
-    df.to_csv(out_csv, index=False, float_format="%.8g", columns=columns)
+
+    # Pick up all effective sound speed columns (sorted for stable output)
+    c_eff_cols = sorted([c for c in df.columns if c.startswith("cEff_ms_alpha")])
+
+    df.to_csv(
+        out_csv,
+        index=False,
+        float_format="%.8g",
+        columns=base_columns + c_eff_cols,
+    )
 
 
 def plot_profile(   # Takes care of repetative plotting
@@ -206,7 +222,7 @@ def main():
 
     g2s_obj = read_g2s_json(json_path)
     profile_df = build_profile_dataframe(g2s_obj)
-    profile_df = add_sound_speeds(profile_df, PROPAGATION_AZIMUTH_DEG)
+    profile_df = add_sound_speeds(profile_df, PROPAGATION_AZIMUTHS_DEG)
 
     # Output paths
     stem = json_path.with_suffix("")  # removes .json
@@ -235,14 +251,21 @@ def main():
             out_dir / f"{stem.name}{suffix}",
         )
 
-    # Effective sound speed plot has a slightly different label + filename
-    az_str = format_deg_for_filename(PROPAGATION_AZIMUTH_DEG)
-    plot_profile(
-        profile_df["cEff_ms"].to_numpy(),
-        z_m,
-        f"c_eff (m/s) @ azimuth={az_str}°",
-        out_dir / f"{stem.name}_cEff_alpha{az_str}deg_profile.png",
-    )
+    # Effective sound speed plots for each azimuth
+    if np.isscalar(PROPAGATION_AZIMUTHS_DEG):
+        azimuths = [float(PROPAGATION_AZIMUTHS_DEG)]
+    else:
+        azimuths = [float(a) for a in PROPAGATION_AZIMUTHS_DEG]
+
+    for az in azimuths:
+        az_str = format_deg_for_filename(az)
+        col = f"cEff_ms_alpha{az_str}deg"
+        plot_profile(
+            profile_df[col].to_numpy(),
+            z_m,
+            f"c_eff (m/s) @ azimuth={az_str}°",
+            out_dir / f"{stem.name}_cEff_alpha{az_str}deg_profile.png",
+        )
 
     # Small terminal summary
     meta = g2s_obj.get("meta", {})
@@ -251,7 +274,7 @@ def main():
     print(f"Wrote: {csv_path}")
     print(f"Time: {time_str}")
     print(f"Location: lat {loc.get('latitude')}, lon {loc.get('longitude')}")
-    print(profile_df[["z_agl_m", "c0_ms", "cEff_ms"]].describe())
+    # print(profile_df[["z_agl_m", "c0_ms", "cEff_ms"]].describe())   # Error, need fixing for multiple azimuths
 
 
 if __name__ == "__main__":
