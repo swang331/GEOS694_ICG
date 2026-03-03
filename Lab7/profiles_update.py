@@ -82,7 +82,7 @@ def build_profile_dataframe(g2s_obj: dict):
     """
     data = g2s_obj["data"]
 
-    required_params = ["Z0", "Z", "T", "U", "V", "R", "P"]
+    required_params = ["Z0", "Z", "T", "U", "V", "R", "P"]  # Catch if any are missing from the JSON
     missing = [k for k in required_params if k not in data]
     if missing:
         raise KeyError(f"Missing required parameters in JSON: {missing}")
@@ -165,7 +165,7 @@ def write_profiles_csv(df: pd.DataFrame, out_csv: Path):
     df.to_csv(out_csv, index=False, float_format="%.8g", columns=columns)
 
 
-def plot_profile(
+def plot_profile(   # Takes care of repetative plotting
     x_values: np.ndarray,
     z_agl_m: np.ndarray,
     xlabel: str,
@@ -215,42 +215,31 @@ def main():
     csv_path = out_dir / f"{stem.name}_profiles.csv"
     write_profiles_csv(profile_df, csv_path)
 
-    # Plots (y in meters AGL)
-    plot_profile(
-        profile_df["T_K"].to_numpy(),
-        profile_df["z_agl_m"].to_numpy(),
-        "Temperature (K)",
-        out_dir / f"{stem.name}_T_profile.png",
-    )
-    plot_profile(
-        profile_df["U_ms"].to_numpy(),
-        profile_df["z_agl_m"].to_numpy(),
-        "Zonal wind U (m/s, +East)",
-        out_dir / f"{stem.name}_U_profile.png",
-    )
-    plot_profile(
-        profile_df["V_ms"].to_numpy(),
-        profile_df["z_agl_m"].to_numpy(),
-        "Meridional wind V (m/s, +North)",
-        out_dir / f"{stem.name}_V_profile.png",
-    )
-    plot_profile(
-        profile_df["rho_kg_m3"].to_numpy(),
-        profile_df["z_agl_m"].to_numpy(),
-        "Density (kg/m³)",
-        out_dir / f"{stem.name}_rho_profile.png",
-    )
-    plot_profile(
-        profile_df["P_Pa"].to_numpy(),
-        profile_df["z_agl_m"].to_numpy(),
-        "Pressure (Pa)",
-        out_dir / f"{stem.name}_P_profile.png",
-    )
+    # Plotting (reduced repetition)
+    z_m = profile_df["z_agl_m"].to_numpy()
 
+    # Each entry: (column_name, x_label, filename_suffix)
+    plot_specs = [
+        ("T_K",       "Temperature (K)",              "_T_profile.png"),
+        ("U_ms",      "Zonal wind U (m/s, +East)",     "_U_profile.png"),
+        ("V_ms",      "Meridional wind V (m/s, +North)","_V_profile.png"),
+        ("rho_kg_m3", "Density (kg/m³)",              "_rho_profile.png"),
+        ("P_Pa",      "Pressure (Pa)",                "_P_profile.png"),
+    ]
+
+    for col, xlab, suffix in plot_specs:
+        plot_profile(
+            profile_df[col].to_numpy(),
+            z_m,
+            xlab,
+            out_dir / f"{stem.name}{suffix}",
+        )
+
+    # Effective sound speed plot has a slightly different label + filename
     az_str = format_deg_for_filename(PROPAGATION_AZIMUTH_DEG)
     plot_profile(
         profile_df["cEff_ms"].to_numpy(),
-        profile_df["z_agl_m"].to_numpy(),
+        z_m,
         f"c_eff (m/s) @ azimuth={az_str}°",
         out_dir / f"{stem.name}_cEff_alpha{az_str}deg_profile.png",
     )
