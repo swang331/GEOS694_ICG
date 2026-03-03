@@ -33,19 +33,11 @@ def extract_df(g2s: dict):
     d = g2s["data"]
 
     Z0_km = float(d["Z0"]["values"][0])                  # km
-<<<<<<< HEAD
-    Z_km  = np.asarray(d["Z"]["values"], dtype=float)    # km AGL
-
-    df = pd.DataFrame({
-        "z_agl_km": Z_km,
-        "z_msl_km": Z_km + Z0_km,
-=======
     Z_km  = np.asarray(d["Z"]["values"], dtype=float)    # km above ground level (AGL)
 
     df = pd.DataFrame({
         "z_agl_km": Z_km,
         "z_msl_km": Z_km + Z0_km,   # MSL = mean sea level
->>>>>>> 5cc2330 (fixde variable names to be more intuitive)
         "T_K":       np.asarray(d["T"]["values"], dtype=float),
         "U_ms":      np.asarray(d["U"]["values"], dtype=float),
         "V_ms":      np.asarray(d["V"]["values"], dtype=float),
